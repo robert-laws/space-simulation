@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apollo Mission - Journey to the Moon</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Three.js Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Progress Indicator -->
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+        <div id="progress-markers"></div>
+    </div>
+
+    <!-- Mission Stage Label -->
+    <div id="stage-label">
+        <span id="stage-number">01</span>
+        <span id="stage-name">LAUNCH</span>
+    </div>
+
+    <!-- Educational Overlay Panel -->
+    <div id="info-panel">
+        <h2 id="info-title">Saturn V Launch</h2>
+        <p id="info-description">The Saturn V rocket stands 363 feet tall, generating 7.6 million pounds of thrust at liftoff.</p>
+        <div id="info-stats">
+            <div class="stat">
+                <span class="stat-value" id="stat-altitude">0</span>
+                <span class="stat-label">Altitude (km)</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-velocity">0</span>
+                <span class="stat-label">Velocity (km/s)</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-distance">0</span>
+                <span class="stat-label">Distance (km)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scroll Indicator (shown at start) -->
+    <div id="scroll-indicator">
+        <span>Scroll to begin mission</span>
+        <div class="scroll-arrow"></div>
+    </div>
+
+    <!-- Scrollable Content (invisible, just for scroll height) -->
+    <div id="scroll-content"></div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
