@@ -118,11 +118,17 @@ const missionStages = [
 // Global Variables
 let scene, camera, renderer;
 let earth, moon, spacecraft, lunarModule;
+let trajectoryLine, returnTrajectoryLine;
 let stars = [];
 let scrollProgress = 0;
 let currentStage = 0;
 let targetCameraPosition = new THREE.Vector3();
 let targetCameraLookAt = new THREE.Vector3();
+
+// Fixed camera position for overview
+const CAMERA_DISTANCE = 1400;
+const CAMERA_HEIGHT = 800;
+const CENTER_X = 500; // Center point between Earth and Moon
 
 // Initialize the scene
 function init() {
@@ -130,14 +136,16 @@ function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0a12);
 
-    // Create camera
+    // Create camera - fixed overview position
     camera = new THREE.PerspectiveCamera(
-        60,
+        45,
         window.innerWidth / window.innerHeight,
         0.1,
         100000
     );
-    camera.position.set(0, 50, 200);
+    // Position camera for full overview of Earth-Moon system
+    camera.position.set(CENTER_X, CAMERA_HEIGHT, CAMERA_DISTANCE);
+    camera.lookAt(CENTER_X, 0, 0);
 
     // Create renderer
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -288,7 +296,7 @@ function createMoon() {
     moonGroup.add(craters);
 
     // Position moon far from Earth (scaled down for visualization)
-    moonGroup.position.set(2000, 0, 0);
+    moonGroup.position.set(1000, 0, 0);
     scene.add(moonGroup);
     moon = moonGroup;
 }
@@ -419,31 +427,80 @@ function createLunarModule() {
 
 // Create trajectory path
 function createTrajectoryPath() {
-    const pathPoints = [];
-
-    // Earth to Moon trajectory (figure-8 pattern simplified)
+    // Outbound trajectory (Earth to Moon)
+    const outboundPoints = [];
     for (let i = 0; i <= 100; i++) {
         const t = i / 100;
-        const x = t * 2000; // Move toward moon
-        const y = Math.sin(t * Math.PI) * 300; // Arc upward
-        const z = Math.sin(t * Math.PI * 0.5) * 100;
-        pathPoints.push(new THREE.Vector3(x, y, z));
+        const x = t * 1000; // Move toward moon
+        const y = Math.sin(t * Math.PI) * 200; // Arc upward
+        const z = 0;
+        outboundPoints.push(new THREE.Vector3(x, y, z));
     }
 
-    const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
-    const pathMaterial = new THREE.LineDashedMaterial({
+    const outboundGeometry = new THREE.BufferGeometry().setFromPoints(outboundPoints);
+    const outboundMaterial = new THREE.LineDashedMaterial({
         color: 0x4facfe,
-        dashSize: 10,
-        gapSize: 5,
+        dashSize: 15,
+        gapSize: 8,
+        transparent: true,
+        opacity: 0.5
+    });
+
+    trajectoryLine = new THREE.Line(outboundGeometry, outboundMaterial);
+    trajectoryLine.computeLineDistances();
+    trajectoryLine.name = 'trajectory';
+    scene.add(trajectoryLine);
+
+    // Return trajectory (Moon to Earth) - slightly different arc
+    const returnPoints = [];
+    for (let i = 0; i <= 100; i++) {
+        const t = i / 100;
+        const x = 1000 - t * 1000; // Move back toward Earth
+        const y = -Math.sin(t * Math.PI) * 180; // Arc downward
+        const z = 0;
+        returnPoints.push(new THREE.Vector3(x, y, z));
+    }
+
+    const returnGeometry = new THREE.BufferGeometry().setFromPoints(returnPoints);
+    const returnMaterial = new THREE.LineDashedMaterial({
+        color: 0x00f2fe,
+        dashSize: 15,
+        gapSize: 8,
         transparent: true,
         opacity: 0.3
     });
 
-    const trajectoryPath = new THREE.Line(pathGeometry, pathMaterial);
-    trajectoryPath.computeLineDistances();
-    trajectoryPath.visible = false;
-    trajectoryPath.name = 'trajectory';
-    scene.add(trajectoryPath);
+    returnTrajectoryLine = new THREE.Line(returnGeometry, returnMaterial);
+    returnTrajectoryLine.computeLineDistances();
+    returnTrajectoryLine.name = 'returnTrajectory';
+    returnTrajectoryLine.visible = false;
+    scene.add(returnTrajectoryLine);
+
+    // Add Earth orbit ring
+    const orbitGeometry = new THREE.RingGeometry(148, 152, 64);
+    const orbitMaterial = new THREE.MeshBasicMaterial({
+        color: 0x4facfe,
+        transparent: true,
+        opacity: 0.2,
+        side: THREE.DoubleSide
+    });
+    const earthOrbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+    earthOrbit.rotation.x = Math.PI / 2;
+    earthOrbit.position.set(0, 0, 0);
+    scene.add(earthOrbit);
+
+    // Add Moon orbit ring
+    const moonOrbitGeometry = new THREE.RingGeometry(58, 62, 64);
+    const moonOrbitMaterial = new THREE.MeshBasicMaterial({
+        color: 0xaaaaaa,
+        transparent: true,
+        opacity: 0.2,
+        side: THREE.DoubleSide
+    });
+    const moonOrbit = new THREE.Mesh(moonOrbitGeometry, moonOrbitMaterial);
+    moonOrbit.rotation.x = Math.PI / 2;
+    moonOrbit.position.copy(moon.position);
+    scene.add(moonOrbit);
 }
 
 // Setup progress markers
@@ -552,160 +609,179 @@ function onResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Update spacecraft position based on scroll
+// Get position along trajectory arc
+function getTrajectoryPosition(t, outbound = true) {
+    if (outbound) {
+        return {
+            x: t * 1000,
+            y: Math.sin(t * Math.PI) * 200
+        };
+    } else {
+        return {
+            x: 1000 - t * 1000,
+            y: -Math.sin(t * Math.PI) * 180
+        };
+    }
+}
+
+// Update spacecraft position based on scroll (FIXED OVERVIEW CAMERA)
 function updateSpacecraftPosition() {
     const stageProgress = (scrollProgress * missionStages.length) % 1;
 
+    // Keep camera fixed at overview position
+    camera.position.set(CENTER_X, CAMERA_HEIGHT, CAMERA_DISTANCE);
+    camera.lookAt(CENTER_X, 0, 0);
+
+    // Scale spacecraft for visibility in overview
+    const overviewScale = 3;
+    spacecraft.scale.set(overviewScale, overviewScale, overviewScale);
+    lunarModule.scale.set(overviewScale, overviewScale, overviewScale);
+
+    // Reset rotations
+    spacecraft.rotation.set(0, 0, 0);
+    lunarModule.rotation.set(0, 0, 0);
+
+    // Hide lunar module by default
+    lunarModule.visible = false;
+
+    // Show return trajectory when returning
+    if (currentStage >= 10) {
+        returnTrajectoryLine.visible = true;
+    } else {
+        returnTrajectoryLine.visible = false;
+    }
+
     // Different behaviors for each stage
     switch(currentStage) {
-        case 0: // Launch
-            spacecraft.position.y = 100 + stageProgress * 50;
+        case 0: // Launch - spacecraft rises from Earth
             spacecraft.position.x = 0;
+            spacecraft.position.y = 100 + stageProgress * 50;
+            spacecraft.position.z = 0;
             spacecraft.rotation.z = 0;
-            camera.position.set(50, spacecraft.position.y + 30, 150);
-            camera.lookAt(spacecraft.position);
             break;
 
-        case 1: // Stage separation
-            spacecraft.position.y = 150 + stageProgress * 100;
-            spacecraft.rotation.z = stageProgress * 0.1;
-            camera.position.set(30, spacecraft.position.y + 20, 100);
-            camera.lookAt(spacecraft.position);
+        case 1: // Stage separation - continues rising
+            spacecraft.position.x = 0;
+            spacecraft.position.y = 150 + stageProgress * 30;
+            spacecraft.position.z = 0;
+            // Slight wobble during separation
+            spacecraft.rotation.z = Math.sin(stageProgress * Math.PI * 4) * 0.1;
             break;
 
-        case 2: // Earth orbit
-            const orbitAngle = stageProgress * Math.PI;
+        case 2: // Earth orbit - circles Earth
+            const orbitAngle = stageProgress * Math.PI * 2;
             spacecraft.position.x = Math.cos(orbitAngle) * 150;
             spacecraft.position.z = Math.sin(orbitAngle) * 150;
             spacecraft.position.y = 0;
             spacecraft.rotation.y = orbitAngle + Math.PI / 2;
-            camera.position.set(
-                spacecraft.position.x + 50,
-                50,
-                spacecraft.position.z + 100
-            );
-            camera.lookAt(earth.position);
             break;
 
-        case 3: // TLI burn
-            const tliProgress = stageProgress;
-            spacecraft.position.x = 150 + tliProgress * 200;
-            spacecraft.position.y = tliProgress * 150;
+        case 3: // TLI burn - leaves Earth orbit, starts toward Moon
+            const tliT = stageProgress * 0.15; // First 15% of trajectory
+            const tliPos = getTrajectoryPosition(tliT);
+            spacecraft.position.x = tliPos.x;
+            spacecraft.position.y = tliPos.y;
             spacecraft.position.z = 0;
-            camera.position.set(
-                spacecraft.position.x - 50,
-                spacecraft.position.y + 30,
-                100
-            );
-            camera.lookAt(spacecraft.position);
-            // Show trajectory
-            scene.getObjectByName('trajectory').visible = true;
+            // Point toward Moon
+            spacecraft.rotation.z = -Math.PI / 4;
             break;
 
-        case 4: // Docking
-            spacecraft.position.x = 350 + stageProgress * 100;
-            spacecraft.position.y = 150 + stageProgress * 50;
+        case 4: // Docking - continues on trajectory with rotation
+            const dockT = 0.15 + stageProgress * 0.1; // 15-25% of trajectory
+            const dockPos = getTrajectoryPosition(dockT);
+            spacecraft.position.x = dockPos.x;
+            spacecraft.position.y = dockPos.y;
+            spacecraft.position.z = 0;
+            // Rotating during docking maneuver
             spacecraft.rotation.y = stageProgress * Math.PI * 2;
-            camera.position.set(
-                spacecraft.position.x + 30,
-                spacecraft.position.y + 10,
-                50
-            );
-            camera.lookAt(spacecraft.position);
             break;
 
-        case 5: // Lunar transit
-            const transitProgress = stageProgress;
-            spacecraft.position.x = 450 + transitProgress * 1000;
-            spacecraft.position.y = 200 + Math.sin(transitProgress * Math.PI) * 100;
-            spacecraft.position.z = Math.sin(transitProgress * Math.PI * 0.5) * 50;
-            camera.position.set(
-                spacecraft.position.x - 100,
-                spacecraft.position.y + 50,
-                200
-            );
-            camera.lookAt(spacecraft.position);
+        case 5: // Lunar transit - coasting to Moon
+            const transitT = 0.25 + stageProgress * 0.55; // 25-80% of trajectory
+            const transitPos = getTrajectoryPosition(transitT);
+            spacecraft.position.x = transitPos.x;
+            spacecraft.position.y = transitPos.y;
+            spacecraft.position.z = 0;
             break;
 
-        case 6: // LOI - Lunar Orbit Insertion
-            const loiAngle = stageProgress * Math.PI;
-            spacecraft.position.x = moon.position.x + Math.cos(loiAngle) * 80;
-            spacecraft.position.z = Math.sin(loiAngle) * 80;
+        case 6: // LOI - entering Moon orbit
+            const loiT = 0.80 + stageProgress * 0.20; // 80-100% of trajectory to Moon
+            if (loiT < 1) {
+                const loiPos = getTrajectoryPosition(loiT);
+                spacecraft.position.x = loiPos.x;
+                spacecraft.position.y = loiPos.y;
+            } else {
+                // Start orbiting Moon
+                const moonOrbitAngle = (loiT - 1) * Math.PI;
+                spacecraft.position.x = moon.position.x + Math.cos(moonOrbitAngle) * 60;
+                spacecraft.position.z = Math.sin(moonOrbitAngle) * 60;
+                spacecraft.position.y = 0;
+            }
+            break;
+
+        case 7: // LM Descent - LM separates and descends
+            lunarModule.visible = true;
+            // CSM orbits Moon
+            const lmDescentOrbitAngle = stageProgress * Math.PI;
+            spacecraft.position.x = moon.position.x + Math.cos(lmDescentOrbitAngle) * 60;
+            spacecraft.position.z = Math.sin(lmDescentOrbitAngle) * 60;
             spacecraft.position.y = 0;
-            camera.position.set(
-                moon.position.x + 150,
-                50,
-                150
-            );
-            camera.lookAt(moon.position);
-            break;
-
-        case 7: // LM Descent
-            lunarModule.visible = true;
-            const descentProgress = stageProgress;
-            lunarModule.position.x = moon.position.x + 30 - descentProgress * 3;
-            lunarModule.position.y = 50 - descentProgress * 50;
+            // LM descends to surface
+            lunarModule.position.x = moon.position.x + 27 + (1 - stageProgress) * 10;
+            lunarModule.position.y = 60 - stageProgress * 33; // Descend to surface (27 = moon radius)
             lunarModule.position.z = 0;
-            spacecraft.position.x = moon.position.x + Math.cos(descentProgress * Math.PI * 0.5) * 80;
-            spacecraft.position.z = Math.sin(descentProgress * Math.PI * 0.5) * 80;
-            camera.position.set(
-                lunarModule.position.x + 30,
-                lunarModule.position.y + 20,
-                60
-            );
-            camera.lookAt(lunarModule.position);
             break;
 
-        case 8: // Moon landing
+        case 8: // Moon landing - on the surface
             lunarModule.visible = true;
+            // CSM continues orbiting
+            const landingOrbitAngle = stageProgress * Math.PI * 2;
+            spacecraft.position.x = moon.position.x + Math.cos(landingOrbitAngle) * 60;
+            spacecraft.position.z = Math.sin(landingOrbitAngle) * 60;
+            spacecraft.position.y = 0;
+            // LM on surface
             lunarModule.position.x = moon.position.x + 27;
-            lunarModule.position.y = 27 + 6; // On surface
+            lunarModule.position.y = 27;
             lunarModule.position.z = 0;
-            camera.position.set(
-                lunarModule.position.x + 20,
-                lunarModule.position.y + 10,
-                40
-            );
-            camera.lookAt(lunarModule.position);
             break;
 
-        case 9: // LM Ascent
-            const ascentProgress = stageProgress;
-            lunarModule.position.y = 33 + ascentProgress * 50;
-            spacecraft.position.x = moon.position.x + Math.cos(ascentProgress * Math.PI) * 80;
-            spacecraft.position.z = Math.sin(ascentProgress * Math.PI) * 80;
-            camera.position.set(
-                moon.position.x + 100,
-                50,
-                100
-            );
-            camera.lookAt(lunarModule.position);
+        case 9: // LM Ascent - LM launches and docks
+            lunarModule.visible = true;
+            // CSM orbits
+            const ascentOrbitAngle = stageProgress * Math.PI;
+            spacecraft.position.x = moon.position.x + Math.cos(ascentOrbitAngle) * 60;
+            spacecraft.position.z = Math.sin(ascentOrbitAngle) * 60;
+            spacecraft.position.y = 0;
+            // LM ascends and moves toward CSM
+            lunarModule.position.x = moon.position.x + 27 + stageProgress * (Math.cos(ascentOrbitAngle) * 60 - 27 + moon.position.x);
+            lunarModule.position.y = 27 + stageProgress * 33;
+            lunarModule.position.z = stageProgress * Math.sin(ascentOrbitAngle) * 60;
+            // At end of stage, hide LM (docked)
+            if (stageProgress > 0.9) {
+                lunarModule.visible = false;
+            }
             break;
 
-        case 10: // TEI
-            lunarModule.visible = false;
-            const teiProgress = stageProgress;
-            spacecraft.position.x = moon.position.x - teiProgress * 500;
-            spacecraft.position.y = teiProgress * 100;
-            camera.position.set(
-                spacecraft.position.x + 100,
-                spacecraft.position.y + 50,
-                200
-            );
-            camera.lookAt(spacecraft.position);
+        case 10: // TEI - leaving Moon, heading back to Earth
+            const teiT = stageProgress * 0.5; // First half of return trajectory
+            const teiPos = getTrajectoryPosition(teiT, false);
+            spacecraft.position.x = teiPos.x;
+            spacecraft.position.y = teiPos.y;
+            spacecraft.position.z = 0;
             break;
 
-        case 11: // Splashdown
-            const reentryProgress = stageProgress;
-            spacecraft.position.x = 1500 - reentryProgress * 1500;
-            spacecraft.position.y = 100 - reentryProgress * 100;
-            spacecraft.rotation.x = reentryProgress * Math.PI * 0.5;
-            camera.position.set(
-                spacecraft.position.x + 50,
-                spacecraft.position.y + 30,
-                100
-            );
-            camera.lookAt(spacecraft.position);
+        case 11: // Splashdown - approaching and landing on Earth
+            const returnT = 0.5 + stageProgress * 0.5; // Second half of return
+            const returnPos = getTrajectoryPosition(returnT, false);
+            spacecraft.position.x = returnPos.x;
+            spacecraft.position.y = returnPos.y;
+            spacecraft.position.z = 0;
+            // At very end, spacecraft is at Earth
+            if (stageProgress > 0.95) {
+                spacecraft.position.x = 0;
+                spacecraft.position.y = 100 - (stageProgress - 0.95) * 2000;
+                spacecraft.rotation.x = Math.PI; // Heat shield forward
+            }
             break;
     }
 }
@@ -730,9 +806,6 @@ function animate() {
 
     // Update spacecraft position based on scroll
     updateSpacecraftPosition();
-
-    // Smooth camera movement
-    camera.position.lerp(targetCameraPosition, 0.05);
 
     renderer.render(scene, camera);
 }
